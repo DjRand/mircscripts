@@ -69,6 +69,12 @@ alias -l _nibl.bot.name.seperator { return 0 }
 alias -l _add.bot.to.trusted { return 1 }
 
 ; If your download is incomplete, re-request the file from the bot.
+;    Note: You must enable mIRC's "auto resume" feature.
+;       Alt+O > DCC > [x] Auto-get file and [x] Minimize
+;       Alt+O > DCC > If file exists [Resume]
+;       Alt+O > DCC > [Trusted] > [x] Limit auto-get to trusted users.
+;       Alt+O > DCC > [Trusted] > [x] Show get dialog for non-trusted users.
+;
 ;    Default option for this is 1, "on."  You can set this to 0 to disable.
 
 alias -l _nibl.bot.file.retry { return 1 }
@@ -165,6 +171,22 @@ on *:hotlink:[NIBLGET]:@nibl:{
   if (%nick !ison #nibl && %nick !ison #horriblesubs) { echo -a *** Error:  Silly bastard!  The bot $qt(%nick) isn't even on #NIBL! (network : $network - current) | return }
   _getPack %nick %pack %file
 }
+on ^*:hotlink:[CANCELGET]:*:{
+  if ($strip($gettok($hotline,1,32)) != [CANCELGET]) halt
+  if ($strip($1) == [CANCELGET]) return
+  halt
+}
+on *:hotlink:[CANCELGET]:*:{
+  tokenize 32 $hotline
+  if ($hget(niblget,$2)) {
+    echo -sa 4> 5Removing auto-retry for:07 $2 5-7 $hget(niblget,$2)
+    hdel niblget $2
+    .timer. $+ $2 off
+  }
+  else {
+    echo -a 4> 5No auto-retry set for:07 $2
+  }
+}
 
 alias -l _getPack {
   var %nick = $1 , %pack = $2 , %file = $3- , %np = $+(%nick,.,%pack)
@@ -177,13 +199,16 @@ alias -l _getPack {
 }
 
 on *:getfail:*:{
+  if (!$_nibl.bot.file.retry) return
   var %n = niblget , %f = $nopath($filename) , %nickwm = $nick $+ .*
   if ($hfind(%n,%f,1).data != $null) {
     var %np = $v1
     if (%nickwm iswm %np) {
       if ($regex(%np,/^(.+?)\.(#.+?)$/)) {
         echo -s Failure to get file from $regml(1), and requesting the file (pack $regml(2) ) again in 15 seconds.
-        echo -s To cancel this, copy and paste this command (within 15 seconds): /cancelget %np
+        echo -s To cancel this, double click the word "CANCELGET" in the line below. Or type: /cancelget %np
+        echo -sa 4[CANCELGET]7 %np 5-7 %f     5(auto retry in 15sec)
+        beep 1
         .timer. $+ %np 1 15 msg $regml(1) xdcc get $regml(2) 
       }
     }
@@ -200,6 +225,7 @@ on *:filercvd:*:{
     var %np = $v1
     if (%nickwm iswm %np) {
       echo -s File recieved.  Removing %np from the watch list.
+      hdel niblget %np
     }
   }
 }
